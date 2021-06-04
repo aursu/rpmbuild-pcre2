@@ -1,6 +1,9 @@
 # Add readline edditing in pcre2test tool
 %bcond_without pcre2_enables_readline
 
+%define _debugsource_template %{nil}
+%define debug_package %{nil}
+
 # Disable SELinux-frindly JIT allocator because it seems not to be fork-safe,
 # https://bugs.exim.org/show_bug.cgi?id=1749#c45
 %bcond_with pcre2_enables_sealloc
@@ -8,8 +11,8 @@
 # This is stable release:
 #%%global rcversion RC1
 Name:       pcre2
-Version:    10.34
-Release:    %{?rcversion:0.}1%{?rcversion:.%rcversion}%{?dist}
+Version:    10.36
+Release:    %{?rcversion:0.}4%{?rcversion:.%rcversion}%{?dist}
 %global     myversion %{version}%{?rcversion:-%rcversion}
 Summary:    Perl-compatible regular expression library
 # the library:                          BSD with exceptions
@@ -51,6 +54,18 @@ Source1:    https://ftp.pcre.org/pub/pcre/%{?rcversion:Testing/}%{name}-%{myvers
 Source2:    https://ftp.pcre.org/pub/pcre/Public-Key
 # Do no set RPATH if libdir is not /usr/lib
 Patch0:     pcre2-10.10-Fix-multilib.patch
+# Fix a possible NULL pointer dereference in auto_possessify(),
+# upstream bug #2686, in upstream after 10.36
+Patch1:     pcre2-10.36-Get-rid-of-gcc-fanalyzer-error-though-it-was-probabl.patch
+# Fix misparsing long numbers as a backreference and a number without
+# a closing bracket as a quantifier, upstream bug #2690, in upstream after
+# 10.36
+Patch2:     pcre2-10.36-Fix-some-numerical-checking-bugs-Bugzilla-2690.patch
+# Fix a mismatch if \K was involved in a recursion, in upstream after 10.36
+Patch3:     pcre2-10.36-Fix-K-within-recursion-bug-in-interpreter.patch
+# Restore single character repetition optimization in JIT, upstream bug #2698,
+# in upstream after 10.36
+Patch4:     pcre2-10.36-Restore-single-character-repetition-optimization-in-.patch
 BuildRequires:  autoconf
 BuildRequires:  automake
 BuildRequires:  coreutils
@@ -61,6 +76,8 @@ BuildRequires:  make
 %if %{with pcre2_enables_readline}
 BuildRequires:  readline-devel
 %endif
+BuildRequires:  sed
+Requires:       %{name}-syntax = %{version}-%{release}
 Provides:       bundled(sljit)
 
 %description
@@ -84,6 +101,7 @@ restricted, and does not give full access to all of PCRE2's facilities.
 %package utf16
 Summary:    UTF-16 variant of PCRE2
 Provides:   bundled(sljit)
+Requires:   %{name}-syntax = %{version}-%{release}
 Conflicts:  %{name}%{?_isa} < 10.21-4
 
 %description utf16
@@ -92,6 +110,7 @@ This is PCRE2 library working on UTF-16 strings.
 %package utf32
 Summary:    UTF-32 variant of PCRE2
 Provides:   bundled(sljit)
+Requires:   %{name}-syntax = %{version}-%{release}
 Conflicts:  %{name}%{?_isa} < 10.21-4
 
 %description utf32
@@ -116,6 +135,15 @@ Provides:   bundled(sljit)
 %description static
 Library for static linking for %{name}.
 
+%package syntax
+Summary:    Documentation for PCRE2 regular expressions
+BuildArch:  noarch
+Conflicts:  %{name}-devel < 10.34-8
+
+%description syntax
+This is a set of manual pages that document a syntax of the regular
+expressions implemented by the PCRE2 library.
+
 %package tools
 Summary:    Auxiliary utilities for %{name}
 # pcre2test (linked to GNU readline):   BSD (linked to GPLv3+)
@@ -127,8 +155,7 @@ Utilities demonstrating PCRE2 capabilities like pcre2grep or pcre2test.
 
 %prep
 %{gpgverify} --keyring='%{SOURCE2}' --signature='%{SOURCE1}' --data='%{SOURCE0}'
-%setup -q -n %{name}-%{myversion}
-%patch0 -p1
+%autosetup -n %{name}-%{myversion} -p1
 # Because of multilib patch
 libtoolize --copy --force
 autoreconf -vif
@@ -192,25 +219,28 @@ make %{?_smp_mflags} check VERBOSE=yes
 %files
 %{_libdir}/libpcre2-8.so.0*
 %{_libdir}/libpcre2-posix.so.2*
-%license COPYING LICENCE
-%doc AUTHORS ChangeLog NEWS
 
 %files utf16
 %{_libdir}/libpcre2-16.so.0*
-%license COPYING LICENCE
-%doc AUTHORS ChangeLog NEWS
 
 %files utf32
 %{_libdir}/libpcre2-32.so.0*
-%license COPYING LICENCE
-%doc AUTHORS ChangeLog NEWS
 
 %files devel
 %{_libdir}/*.so
 %{_libdir}/pkgconfig/*
 %{_includedir}/*.h
 %{_mandir}/man1/pcre2-config.*
-%{_mandir}/man3/*
+%{_mandir}/man3/pcre2_*
+%{_mandir}/man3/pcre2api.*
+%{_mandir}/man3/pcre2build.*
+%{_mandir}/man3/pcre2callout.*
+%{_mandir}/man3/pcre2convert.*
+%{_mandir}/man3/pcre2demo.*
+%{_mandir}/man3/pcre2jit.*
+%{_mandir}/man3/pcre2posix.*
+%{_mandir}/man3/pcre2sample.*
+%{_mandir}/man3/pcre2serialize*
 %{_bindir}/pcre2-config
 %doc doc/*.txt doc/html
 %doc README HACKING ./src/pcre2demo.c
@@ -219,6 +249,19 @@ make %{?_smp_mflags} check VERBOSE=yes
 %{_libdir}/*.a
 %license COPYING LICENCE
 
+%files syntax
+%license COPYING LICENCE
+%doc AUTHORS ChangeLog NEWS
+%{_mandir}/man3/pcre2.*
+%{_mandir}/man3/pcre2compat.*
+%{_mandir}/man3/pcre2limits.*
+%{_mandir}/man3/pcre2matching.*
+%{_mandir}/man3/pcre2partial.*
+%{_mandir}/man3/pcre2pattern.*
+%{_mandir}/man3/pcre2perform.*
+%{_mandir}/man3/pcre2syntax.*
+%{_mandir}/man3/pcre2unicode.*
+
 %files tools
 %{_bindir}/pcre2grep
 %{_bindir}/pcre2test
@@ -226,6 +269,106 @@ make %{?_smp_mflags} check VERBOSE=yes
 %{_mandir}/man1/pcre2test.*
 
 %changelog
+* Fri Feb 19 2021 Petr Pisar <ppisar@redhat.com> - 10.36-4
+- Fix a mismatch if \K was involved in a recursion
+- Restore single character repetition optimization in JIT (upstream bug #2698)
+
+* Tue Feb 02 2021 Petr Pisar <ppisar@redhat.com> - 10.36-3
+- Fix misparsing long numbers as a backreference and a number without
+  a closing bracket as a quantifier (upstream bug #2690)
+
+* Fri Jan 15 2021 Petr Pisar <ppisar@redhat.com> - 10.36-2
+- Fix a possible NULL pointer dereference in auto_possessify()
+  (upstream bug #2686)
+
+* Tue Dec 15 2020 Petr Pisar <ppisar@redhat.com> - 10.36-1
+- 10.36 bump
+
+* Mon Nov 09 2020 Petr Pisar <ppisar@redhat.com> - 10.36-0.1.RC1
+- 10.36-RC1 bump
+
+* Tue Oct 27 2020 Petr Pisar <ppisar@redhat.com> - 10.35-8
+- Fix a partial matching for a word boundary in JIT mode (upstream bug #2663)
+
+* Mon Sep 21 2020 Petr Pisar <ppisar@redhat.com> - 10.35-7
+- Fix matching a character set when JIT is enabled and both Unicode script and
+  Unicode class are present (upstream bug #2644)
+
+* Wed Sep 16 2020 Petr Pisar <ppisar@redhat.com> - 10.35-6
+- Fix escaping test data and only allow slash delimiter after perltest pragma
+  (upstream bug #2641)
+- Fix a mismatch when caselessly searching in an invalid UTF-8 text and a start
+  optimization is enabled (upstream bug #2642)
+
+* Mon Sep 14 2020 Petr Pisar <ppisar@redhat.com> - 10.35-5
+- Fix escaping test data (upstream bug #2641)
+
+* Wed Jul 15 2020 Petr Pisar <ppisar@redhat.com> - 10.35-4
+- Fix a buffer overread when parsing an unterminated VERSION condition with
+  a single-digit minor number at the end of a regular expression
+  (ClusterFuzz #23779)
+- Fix an early fail optimization with character ranges and a buffer overread
+  in JIT (upstream bug #2621)
+
+* Tue Jun 02 2020 Petr Pisar <ppisar@redhat.com> - 10.35-3
+- Fix an infinite loop when a single-byte newline is search in JIT if an
+  invalid UTF-8 mode is enabled (upstream bug #2581)
+
+* Wed May 27 2020 Petr Pisar <ppisar@redhat.com> - 10.35-2
+- Enable shadow stack built-in functions if -fcf-protection compiler flag is
+  used by patching a build script (upstream bug #2578)
+
+* Mon May 11 2020 Petr Pisar <ppisar@redhat.com> - 10.35-1
+- 10.35 bump
+
+* Mon Apr 27 2020 Petr Pisar <ppisar@redhat.com> - 10.35-0.2.RC1
+- Fix a compiler warning about -1 index
+
+* Thu Apr 16 2020 Petr Pisar <ppisar@redhat.com> - 10.35-0.1.RC1
+- 10.35-RC1 bump
+
+* Mon Mar 23 2020 Petr Pisar <ppisar@redhat.com> - 10.34-9
+- Fix a JIT compilation of the Unicode scripts in the extended character classes
+  (upstream bug #2432)
+
+* Mon Mar 16 2020 Petr Pisar <ppisar@redhat.com> - 10.34-8
+- Fix computing an offest for the start of the UTF-16 error when a high
+  surrogate is not followed by a valid low surrogate (upstream bug #2527)
+- Fix compiling a lookbehind when preceded by a DEFINE group
+  (upstream bug #2531)
+- Make manual pages about pattern syntax available when the library is
+  installed (bug #1808612)
+
+* Thu Feb 20 2020 Petr Pisar <ppisar@redhat.com> - 10.34-7
+- Fix a crash in JIT when an invalid UTF-8 character is encountered in
+  match_invalid_utf mode (upstream bug #2529)
+
+* Mon Feb 17 2020 Petr Pisar <ppisar@redhat.com> - 10.34-6
+- Fix restoring a verb chain list when exiting a JIT-compiled recursive
+  function
+
+* Wed Jan 29 2020 Fedora Release Engineering <releng@fedoraproject.org> - 10.34-5.1
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_32_Mass_Rebuild
+
+* Mon Jan 27 2020 Petr Pisar <ppisar@redhat.com> - 10.34-5
+- Fix a memory leak when allocating a JIT stack fails
+- Ensure a newline after the final line in a file is output by pcre2grep
+  (upstream bug #2513)
+- Fix processing (?(DEFINE)...) within look-behind assertions
+- Prevent from a stack exhaustion when studying a pattern for nested groups by
+  putting a limit of 1000 recursive calls
+
+* Mon Jan 13 2020 Petr Pisar <ppisar@redhat.com> - 10.34-4
+- Fix a crash in JITted code when a *THEN verb is used in a lookahead assertion
+  (upstream bug #2510)
+
+* Mon Dec 09 2019 Petr Pisar <ppisar@redhat.com> - 10.34-3
+- Fix a crash in pcre2_jit_compile when passing a NULL code argument (upstream
+  bug #2487)
+
+* Thu Nov 28 2019 Petr Pisar <ppisar@redhat.com> - 10.34-2
+- Fix JIT to respect NOTEMPTY options (upstream bug #2473)
+
 * Fri Nov 22 2019 Petr Pisar <ppisar@redhat.com> - 10.34-1
 - 10.34 bump
 
